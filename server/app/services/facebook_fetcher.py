@@ -1,5 +1,3 @@
-# app/services/facebook.py
-
 import os
 import aiohttp
 import asyncio
@@ -17,7 +15,6 @@ load_dotenv()
 PAGE_ID = os.getenv("FACEBOOK_PAGE_ID")
 ACCESS_TOKEN = os.getenv("FACEBOOK_ACCESS_TOKEN")
 
-# Load HuggingFace sentiment model (load once)
 model_name = "cardiffnlp/twitter-xlm-roberta-base-sentiment"
 tokenizer = XLMRobertaTokenizer.from_pretrained(model_name)
 model = AutoModelForSequenceClassification.from_pretrained(model_name)
@@ -34,8 +31,7 @@ def analyze_sentiment(text):
         elif 'negative' in label:
             return 'Negative'
         return 'Neutral'
-    except Exception as e:
-        print("Sentiment error:", e)
+    except:
         return "Neutral"
 
 def convert_datetime(dt_str):
@@ -53,20 +49,17 @@ async def fetch_url(session, url):
     try:
         async with session.get(url) as response:
             return await response.json()
-    except Exception as e:
-        print("Error fetching:", url, e)
+    except:
         return {}
 
 async def fetch_and_store_data(db: Session):
     async with aiohttp.ClientSession() as session:
-        # Facebook API endpoints
         def get_posts_url():
             return f"https://graph.facebook.com/v20.0/{PAGE_ID}/posts?limit=10&fields=message,created_time,attachments{{media}},likes.summary(true),shares&access_token={ACCESS_TOKEN}"
 
         def get_comments_url(post_id):
             return f"https://graph.facebook.com/v20.0/{post_id}/comments?limit=30&access_token={ACCESS_TOKEN}"
 
-        # Fetch posts
         posts_url = get_posts_url()
         posts_response = await fetch_url(session, posts_url)
         posts = posts_response.get('data', [])
@@ -83,14 +76,12 @@ async def fetch_and_store_data(db: Session):
             likes = post.get("likes", {}).get("summary", {}).get("total_count", 0)
             shares = post.get("shares", {}).get("count", 0)
 
-            # Handle media
             attachments = post.get("attachments", {}).get("data", [])
             if attachments and 'media' in attachments[0]:
                 image_url = attachments[0]['media'].get('image', {}).get('src', "")
 
             sentiment = analyze_sentiment(message)
 
-            # Avoid duplicates
             if not db.get(Post, post_id):
                 db.add(Post(
                     id=post_id,
@@ -103,10 +94,8 @@ async def fetch_and_store_data(db: Session):
                     sentiment=sentiment
                 ))
 
-            # Prepare comment task
             comment_tasks.append(fetch_url(session, get_comments_url(post_id)))
 
-        # Execute comment fetching
         comment_results = await asyncio.gather(*comment_tasks)
 
         for post, comment_data in zip(posts, comment_results):
@@ -134,7 +123,6 @@ async def fetch_and_store_data(db: Session):
         try:
             db.commit()
             return "Facebook data fetched and stored successfully"
-        except Exception as e:
+        except:
             db.rollback()
-            print("DB Commit Error:", e)
             return "Failed to store Facebook data"
